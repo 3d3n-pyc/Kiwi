@@ -19,6 +19,18 @@ Clonez le dépôt et accédez au répertoire du projet :
   cd Kiwi
 ```
 
+Installer les dépendances :
+
+```bash
+  pip install requests
+```
+
+Ajoutez le script [kiwi](kiwi) dans le répertoire `/bin/` :
+
+```bash
+  sudo cp kiwi /bin/
+```
+
 
 ## Utilisation
 
