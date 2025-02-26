@@ -1,0 +1,526 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+import subprocess
+import requests
+
+from dataclasses import dataclass
+
+@dataclass
+class CodingStyleError:
+    file: str
+    line: int
+    error_type: str
+    error: str
+
+class ColorsTTY:
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
+    BLINK = "\033[5m"
+    INVERTED = "\033[7m"
+    HIDDEN = "\033[8m"
+    BLACK = "\033[30m"
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    MAGENTA = "\033[95m"
+    CYAN = "\033[96m"
+    WHITE = "\033[97m"
+    RESET = "\033[0m"
+
+class KiwiArt:
+    """
+    Pretty ASCII art of a kiwi made by Etienne Pouilly and Tom Baes.
+    Github: @EtienneP-26 & @tombaes
+    """
+    
+    COLORS = {
+        0: "\033[0m",
+        1: "\033[30m", # black
+        2: "\033[38;5;76m", # dark green
+        3: "\033[38;5;154m", # green
+        4: "\033[38;5;229m", # light green
+        5: "\033[38;5;172m", # brown
+        6: "\033[38;5;130m" # dark brown
+    }
+    
+    COLOR_CODE = [
+        "000000000000000000000000000000000000000000",
+        "000000000000006666666666666666000000000000",
+        "000000000055555555555556666666660000000000",
+        "000000005555222222222222226666666600000000",
+        "000000553333333333333333332222666666000000",
+        "000055333333333311331133333322226666660000",
+        "000055333311333311331133331133226666660000",
+        "005533333333113333333333113333332266666600",
+        "005533333333333344444433333333332266666600",
+        "005533331111334444444444331111332266666600",
+        "005533333333334444444444333333332266666600",
+        "005533331111334444444444331111332266666600",
+        "005533333333333344444433333333332266666600",
+        "005533333333113333333333113333332266666600",
+        "000055333311333311331133331133222266660000",
+        "000055333333333311331133333333226666660000",
+        "000000553333333333333333332222555566000000",
+        "000000005555222222222222225555555500000000",
+        "000000000055555555555555555555555000000000",
+        "000000000000000000000000000000000000000000"
+    ]
+    
+    ART = [
+        "                                          ",
+        "              ████████████████            ",
+        "          ██████████████████████          ",
+        "        ██████████████████████████        ",
+        "      ██████████████████████████████      ",
+        "    ██████████████████████████████████    ",
+        "    ██████████████████████████████████    ",
+        "  ██████████████████████████████████████  ",
+        "  ██████████████████████████████████████  ",
+        "  ██████████████████████████████████████  ",
+        "  ██████████████████████████████████████  ",
+        "  ██████████████████████████████████████  ",
+        "  ██████████████████████████████████████  ",
+        "  ██████████████████████████████████████  ",
+        "    ██████████████████████████████████    ",
+        "    ██████████████████████████████████    ",
+        "      ██████████████████████████████      ",
+        "        ██████████████████████████        ",
+        "            ██████████████████            "
+    ]
+    
+    def print():
+        for i in range(len(KiwiArt.ART)):
+            for j in range(len(KiwiArt.ART[i])):
+                if KiwiArt.COLOR_CODE[i][j] == None:
+                    print(KiwiArt.ART[i][j], end="")
+                else:
+                    string = KiwiArt.COLORS[int(KiwiArt.COLOR_CODE[i][j])] + KiwiArt.ART[i][j]
+                    print(string, end="")
+            print()
+        print(ColorsTTY.RESET)
+
+class KiwiUtils:
+    @staticmethod
+    def print():
+        KiwiArt.print()
+    
+    TYPES = {
+        "INFO": ColorsTTY.CYAN,
+        "MINOR": ColorsTTY.YELLOW,
+        "MAJOR": ColorsTTY.RED,
+        "CRITICAL": ColorsTTY.RED
+    }
+
+    DESCRIPTIONS = {
+        # Taken from the coding style checker mango ;)
+        
+        # C
+        "C-O1": [
+            "Contents of the repository",
+            "The repository should contain only files required for compilation and must not contain compiled (\33[3m.o, .hi, .a, .so, ...\33[0m), temporary or unnecessary files  (\33[3m*~ * #, *.d, toto, ...\33[0m)."
+        ],
+        "C-O3": [
+            "File coherence",
+            "A source file mustn't contain more than 10 functions (including at most 5 non-static functions)."
+        ],
+        "C-O4": [
+            "Naming files and folders",
+            "All files names and folders must be in English, according the \33[3msnake_case\33[0m convention."
+        ],
+        "C-G1": [
+            "File header",
+            "C files and every Makefile must always start with the standard header of the school."
+        ],
+        "C-G2": [
+            "Separation of functions",
+            "Inside a source file, implementations of functions must be separated by one and only one empty line."
+        ],
+        "C-G3": [
+            "Indentation of reprocessor directives",
+            "The preprocessor directives must be indented according to the level of indirection."
+        ],
+        "C-G4": [
+            "Global variables",
+            "Global variables must be avoided as much as possible. Only global constants should be used."
+        ],
+        "C-G5": ["\33[3minclude", "\33[3minclude\33[0m directive must only include C header files."],
+        "C-G6": ["Line endings", "Line endings must be done in UNIX style (with \33[3m\\n\33[0m)."],
+        "C-G7": ["Trailing spaces", "No trailing spaces must be present at the end of a line."],
+        "C-G8": [
+            "Leading/trailing lines",
+            "No leading empty lines must be present. No more than 1 trailing empty line must be present."
+        ],
+        "C-G10": [
+            "Inline assembly",
+            "Inline assembly must never be used. Programming in C must be done... in C."
+        ],
+        "C-F2": [
+            "Naming functions",
+            "The name of a function must define the task it executes and must contain a verb. All function names must be in English, according to the \33[3msnake_case\33[0m convention."
+        ],
+        "C-F3": ["Number of columns", "The length of a line must not exceed 80 columns."],
+        "C-F4": [
+            "Number of lines",
+            "The body of a function should be as short as possible, and must not exceed 20 lines."
+        ],
+        "C-F5": ["Number of parameters", "A function must not have more than 4 parameters."],
+        "C-F6": [
+            "Functions without parameters",
+            "A function taking no parameters must take void as a parameter in the function declaration."
+        ],
+        "C-F7": [
+            "Structures as parameters",
+            "Structures must be passed to functions using a pointer, not by copy."
+        ],
+        "C-F8": ["Comments inside a function", "There must be no comment within a function."],
+        "C-F9": ["Nested functions", "Nested functions are not allowed."],
+        "C-L1": ["Code line content", "A line must correspond to only one statement."],
+        "C-L2": [
+            "Indentation",
+            "Each indentation level must be done by using 4 spaces. No tabulations may be used for indentation."
+        ],
+        "C-L3": [
+            "Spaces",
+            "When using a space as a separator, one and only one space character must be used."
+        ],
+        "C-L4": [
+            "Curly brackets",
+            "Opening curly brackets must be at the end of the line, after the content it precedes, except for functions definitions where they must be placed alone on their line. Closing curly brackets must be alone on their line, except in the case of \33[3melse\33[0m/\33[3melse if\33[0m control structures, \33[3menum\33[0m declarations, or structure declarations."
+        ],
+        "C-L5": [
+            "Variable declarations",
+            "Variables must be declared at the beginning of the function. Only one variable must be declared per statement."
+        ],
+        "C-L6": [
+            "Blank lines",
+            "A blank line must separate the variable declarations from the remainder of the function. No other blank lines must be present in the function."
+        ],
+        "C-V1": [
+            "Naming identifiers",
+            "All identifier names must be in English, according to the \33[3msnake_case\33[0m convention. The type names defined with \33[3mtypedef\33[0m must end with \33[3m_t\33[0m. The names of macros and global constants and the content of enums must be written in \33[3mUPPER_SNAKE_CASE\33[0m."
+        ],
+        "C-V3": [
+            "Pointers",
+            "The pointer symbol (*) must be attached to the associated variable, with no spaces in between. It must also be preceded by a space, except when it is itself preceded by another asterisk. When used in a cast, the asterisk must have a space on its left side, but not on its right side."
+        ],
+        "C-C1": [
+            "Conditional branching",
+            "A conditionnal block must not contain more than 3 branches."
+        ],
+        "C-C2": [
+            "Ternary operators",
+            "The use of ternary operators is allowed as far as it is kept simple and readable, and if it does not obfuscate code. You must never use nested or chained ternary operators. You must always use the value produced by a ternary operator (by assigning it to a variable or returning it for example)."
+        ],
+        "C-C3": ["\33[3mgoto", "Using the \33[3mgoto\33[0m keyword if forbidden."],
+        "C-H1": [
+            "Content",
+            "Header files must only contain \33[1mfunctions prototypes\33[0m, \33[1mtypes declarations\33[0m, \33[1mglobal variable/constant declarations\33[0m, \33[1mmacros\33[0m, \33[1mstatic inline functions\33[0m. All these elements must only be found in header files, and thus not in source files."
+        ],
+        "C-H2": ["Include guard", "Headers must be protected from double inclusion."],
+        "C-H3": ["Macros", "Macros must match only one statement, and fit on a single line."],
+        "C-A3": ["Line break at the end of file", "Files must end with a line break."],
+
+        # Haskell
+        "H-P1": ["File is not parsable", None],
+        "H-O1": [
+            "Contents of the repository",
+            "The repository should contain only files required for compilation and must not contain compiled (\33[3m.o, .hi, .a, .so, ...\33[0m), temporary or unnecessary files  (\33[3m*~ * #, *.d, toto, ...\33[0m)."
+        ],
+        "H-O2": [
+            "File extension",
+            "Sources in a Haskell program should only have extension \33[3m.hs\33[0m."
+        ],
+        "H-O3": [
+            "File coherence",
+            "A Haskell project must be organised in \33[1mmodules\33[0m, each of which should match a \33[1mlogical entity\33[0m, and group all the functions and data structures associated with that entity. Every haskell file (including Main) should declare a module."
+        ],
+        "H-O4": [
+            "Naming files",
+            "The name of a file should match the name of its module. Therefore, files and modules must be named in \33[3mUpperCamelCase\33[0m and in English."
+        ],
+        "H-O5": [
+            "Module exports",
+            "All modules should explicitly declare their exported definitions. Except the Main module, all modules are expected to export at least one definition."
+        ],
+        "H-G1": [
+            "Epitech header",
+            "Every Haskell file should start with a standard Epitech header."
+        ],
+        "H-E1": [
+            "Language extensions",
+            "All language extensions are forbidden except if the project's subject says otherwise."
+        ],
+        "H-T1": [
+            "Top level bindings signatures",
+            "All top level bindings must have an accompanying type signature."
+        ],
+        "H-M1": [
+            "Mutable variables",
+            "Mutable variables are strictly forbidden."
+        ],
+        "H-M2": [
+            "Unsafe functions",
+            "Functions performing unsafe operations are strictly forbidden."
+        ],
+        "H-M3": [
+            "Forbidden Module Imports",
+            """In order to enforce rules \33[1mH-M1\33[0m and \33[1mH-M2\33[0m, importing any of the following module is strictly forbidden:
+    \33[1m • Data.IORef
+     • Data.STRef
+     • Control.Concurrent.STM.TVar
+     • System.IO.Unsafe\33[0m"""
+        ],
+        "H-F1": [
+            "Coherence of functions",
+            "A function should only do one thing, not mix the different levels of abstraction and respect the principle of single responsibility (a function must only be changed for one reason)."
+        ],
+        "H-F2": [
+            "Naming function",
+            "The name of a function should define the task it executes and should contain a verb. All function names should be in English, according to the \33[3mlowerCamelCase\33[0m convention. Special characters are tolerated as long as they are justified and used sparingly."
+        ],
+        "H-F3": [
+            "Line length",
+            "A Line must be less than 80 characters long."
+        ],
+        "H-F4": [
+            "Function length",
+            "A function body must be 10 lines or less."
+        ],
+        "H-V1": [
+            "Naming identifiers",
+            "All identifier names should be in English, according to the \33[3mlowerCamelCase\33[0m convention. The type names and constructors should be in English, according to the \33[3mUpperCamelCase\33[0m convention."
+        ],
+        "H-C4": [
+            "Conditional branching",
+            "Nested If statements are strictly forbidden."
+        ],
+        "H-C5": [
+            "Guards and ifs expressed as pattern matching",
+            "Guards and if statements which can be expressed as pattern matchings must be expressed as such.."
+        ],
+        "H-D1": [
+            "Useless do",
+            "The \33[1mDo\33[0m notation is forbidden unless it contains a generator (a statement with a left arrow)."
+        ]
+    }
+    
+    FORMAT = '\n'.join([
+        "[{type}{error_type} {error}{reset}] {green}{file}{reset}:{magenta}{line}{reset}",
+        "{description[1]}"
+    ]) + '\n'
+
+    FOOTER = '\n'.join([
+        "{bold}{red}{major} MAJOR{reset} | {bold}{yellow}{minor} MINOR{reset} | {bold}{cyan}{info} INFO{reset}"
+    ]) + '\n'
+
+class CodingStyleDocker:
+    SOCKET_PATH = "/var/run/docker.sock"
+    
+    def __init__(self, REPORTS_DIR: str, DELIVERY_DIR: str) -> None:
+        self.HAS_SOCKET_ACCESS = os.access(self.SOCKET_PATH, os.R_OK)
+        self.GHCR_REGISTRY_TOKEN = requests.get("https://ghcr.io/token?service=ghcr.io&scope=repository:epitech/coding-style-checker:pull").json().get("token")
+        self.GHCR_REPOSITORY_STATUS = requests.head("https://ghcr.io/v2/epitech/coding-style-checker/manifests/latest", headers={"Authorization": f"Bearer {self.GHCR_REGISTRY_TOKEN}"}).status_code == 200
+        
+        self.DOCKER_EXEC_CMD = "docker"
+        self.REPORTS_DIR = REPORTS_DIR
+        self.DELIVERY_DIR = DELIVERY_DIR
+        self.EXPORT_FILE = os.path.join(REPORTS_DIR, "coding-style-reports.log")
+    
+    def run(self) -> str:
+        if os.path.exists(self.EXPORT_FILE):
+            os.remove(self.EXPORT_FILE)
+        
+        if not self.HAS_SOCKET_ACCESS:
+            self.DOCKER_EXEC_CMD = f"sudo {self.DOCKER_EXEC_CMD}"
+        
+        if not self.GHCR_REPOSITORY_STATUS:
+            subprocess.run([
+                self.DOCKER_EXEC_CMD,
+                "pull",
+                "ghcr.io/epitech/coding-style-checker:latest",
+                "&&",
+                self.DOCKER_EXEC_CMD,
+                "image",
+                "prune",
+                "-f"
+            ], shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        subprocess.run([
+            self.DOCKER_EXEC_CMD,
+            "run",
+            "--rm",
+            "--security-opt",
+            "label:disable",
+            "-i",
+            "-v",
+            f"{self.DELIVERY_DIR}:/mnt/delivery",
+            "-v",
+            f"{self.REPORTS_DIR}:/mnt/reports",
+            "ghcr.io/epitech/coding-style-checker:latest",
+            "/mnt/delivery",
+            "/mnt/reports"
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        if not os.path.isfile(self.EXPORT_FILE):
+            print("No reports generated", file=sys.stderr)
+            exit(1)
+        
+        return self.EXPORT_FILE
+
+class Kiwi:
+    
+    def __init__(self) -> None:
+        self.options: tuple[callable, int] = {
+            "-c": (self.mr_clean, 0),
+            "--clean": (self.mr_clean, 0),
+            "-p": (self.change_path, 1),
+            "--path": (self.change_path, 1)
+        }
+        
+        self.codingStyle: CodingStyleDocker
+        self.errors: list[CodingStyleError] = []
+        self.reports_dir: str = None
+        self.delivery_dir: str = None
+        
+        self.SUMMARY = {
+            "CRITICAL": 0,
+            "MAJOR": 0,
+            "MINOR": 0,
+            "INFO": 0
+        }
+    
+    def interpret_options(self, options: list[str]) -> None:
+        if "-h" in options or "--help" in options:
+            self.show_help()
+            exit(0)
+        
+        self.reports_dir = os.path.abspath('.')
+        self.delivery_dir = os.path.abspath('.')
+        
+        if not os.path.isdir(self.delivery_dir):
+            print(f"{ColorsTTY.RED}{self.delivery_dir} is not a directory{ColorsTTY.RESET}", file=sys.stderr)
+            exit(1)
+        
+        options = options[1:]
+        while options:
+            option = options.pop(0)
+            if option not in self.options:
+                print(f"{ColorsTTY.RED}Unknown option {option}{ColorsTTY.RESET}", file=sys.stderr)
+                exit(1)
+
+            func, args = self.options[option]
+            if args > 0:
+                if len(options) < args:
+                    print(f"{ColorsTTY.RED}Option {option} requires {args} argument(s){ColorsTTY.RESET}", file=sys.stderr)
+                    exit(1)
+                func(*options[:args])
+                options = options[args:]
+            else:
+                func()
+
+    def mr_clean(self) -> None:
+        os.system(
+            "find {delivery} ".format(delivery=self.delivery_dir) +
+            " -o ".join([
+                f"-name '{elem}' -delete" for elem in [
+                    '#*#',
+                    '*~',
+                    '*.o',
+                    '*.hi',
+                    '*.a',
+                    '*.so'
+                ]
+            ])
+        )
+
+    def parse_output(self, output: list[str]) -> None:
+        git_exists = not os.system("command -v git > /dev/null 2>&1") and os.path.isdir(".git")
+
+        for line in output:
+            if not line:
+                continue
+            file, line, error_type, error = line.strip().split(":")
+            if self.delivery_dir != os.path.abspath("."):
+                file = self.delivery_dir + file[1:]
+
+            if git_exists and not os.system(f"git check-ignore -q '{file}' > /dev/null 2>&1"):
+                continue
+
+            self.errors.append(CodingStyleError(
+                file=file,
+                line=int(line),
+                error_type=error_type.strip(),
+                error=error
+            ))
+
+    def show_help(self) -> None:
+        print("Usage: kiwi [OPTIONS]\n")
+        print("Options:")
+        print("  -c, --clean\t\tRemove temporary files")
+        print("  -p, --path <path>\tChange the path to the delivery directory")
+        print("  -h, --help\t\tShow this help message")
+    
+    def change_path(self, path: str) -> None:
+        if not os.path.isdir(path):
+            print(f"{ColorsTTY.RED}{path} is not a directory{ColorsTTY.RESET}", file=sys.stderr)
+            exit(1)
+        
+        self.delivery_dir = os.path.abspath(path)
+    
+    def run(self) -> None:
+        self.interpret_options(sys.argv)
+        self.codingStyle = CodingStyleDocker(self.reports_dir, self.delivery_dir)
+        
+        export_file: str = self.codingStyle.run()
+        with open(export_file) as f:
+            lines = f.readlines()
+        
+        self.parse_output(lines)
+        os.remove(export_file)
+        
+        for error in self.errors:
+            print(KiwiUtils.FORMAT.format(
+                type=KiwiUtils.TYPES[error.error_type],
+                error_type=error.error_type,
+                file=error.file,
+                line=error.line,
+                error=error.error,
+                description=KiwiUtils.DESCRIPTIONS[error.error],
+                bold=ColorsTTY.BOLD,
+                reset=ColorsTTY.RESET,
+                red=ColorsTTY.RED,
+                yellow=ColorsTTY.YELLOW,
+                green=ColorsTTY.GREEN,
+                magenta=ColorsTTY.MAGENTA,
+                cyan=ColorsTTY.CYAN,
+                blue=ColorsTTY.BLUE
+            ))
+        
+        for error in self.errors:
+            self.SUMMARY[error.error_type] += 1
+        
+        if not any(self.SUMMARY.values()):
+            KiwiArt.print()
+            print(f"{ColorsTTY.BOLD}{ColorsTTY.GREEN}Good job! No coding style errors found.{ColorsTTY.RESET}")
+            exit(0)
+        
+        print(KiwiUtils.FOOTER.format(
+            bold=ColorsTTY.BOLD,
+            reset=ColorsTTY.RESET,
+            red=ColorsTTY.RED,
+            yellow=ColorsTTY.YELLOW,
+            green=ColorsTTY.GREEN,
+            magenta=ColorsTTY.MAGENTA,
+            cyan=ColorsTTY.CYAN,
+            blue=ColorsTTY.BLUE,
+            major=self.SUMMARY["MAJOR"],
+            minor=self.SUMMARY["MINOR"],
+            info=self.SUMMARY["INFO"],
+            critical=self.SUMMARY["CRITICAL"]
+        ), end='')
+
+if __name__ == "__main__":
+    Kiwi().run()
