@@ -423,7 +423,7 @@ class Kiwi:
 
     def mr_clean(self) -> None:
         os.system(
-            "find {delivery} ".format(delivery=self.delivery_dir) +
+            'find "{delivery}" '.format(delivery=self.delivery_dir) +
             " -o ".join([
                 f"-name '{elem}' -delete" for elem in [
                     '#*#',
