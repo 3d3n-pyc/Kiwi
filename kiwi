@@ -324,7 +324,7 @@ class CodingStyleDocker:
         self.GHCR_REGISTRY_TOKEN = requests.get("https://ghcr.io/token?service=ghcr.io&scope=repository:epitech/coding-style-checker:pull").json().get("token")
         self.GHCR_REPOSITORY_STATUS = requests.head("https://ghcr.io/v2/epitech/coding-style-checker/manifests/latest", headers={"Authorization": f"Bearer {self.GHCR_REGISTRY_TOKEN}"}).status_code == 200
         
-        self.DOCKER_EXEC_CMD = "docker"
+        self.DOCKER_EXEC_CMD = ["docker"]
         self.REPORTS_DIR = REPORTS_DIR
         self.DELIVERY_DIR = DELIVERY_DIR
         self.EXPORT_FILE = os.path.join(REPORTS_DIR, "coding-style-reports.log")
@@ -334,22 +334,20 @@ class CodingStyleDocker:
             os.remove(self.EXPORT_FILE)
         
         if not self.HAS_SOCKET_ACCESS:
-            self.DOCKER_EXEC_CMD = f"sudo {self.DOCKER_EXEC_CMD}"
+            self.DOCKER_EXEC_CMD = ["sudo"] + self.DOCKER_EXEC_CMD
         
         if not self.GHCR_REPOSITORY_STATUS:
-            subprocess.run([
-                self.DOCKER_EXEC_CMD,
+            subprocess.run(self.DOCKER_EXEC_CMD + [
                 "pull",
                 "ghcr.io/epitech/coding-style-checker:latest",
-                "&&",
-                self.DOCKER_EXEC_CMD,
+                "&&"
+            ] + self.DOCKER_EXEC_CMD + [
                 "image",
                 "prune",
                 "-f"
             ], shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-        subprocess.run([
-            self.DOCKER_EXEC_CMD,
+        subprocess.run(self.DOCKER_EXEC_CMD + [
             "run",
             "--rm",
             "--security-opt",
