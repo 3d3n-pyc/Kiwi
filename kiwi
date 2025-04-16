@@ -6,6 +6,7 @@ import subprocess
 import requests
 
 from dataclasses import dataclass
+from typing import Callable
 
 @dataclass
 class CodingStyleError:
@@ -371,7 +372,7 @@ class CodingStyleDocker:
 class Kiwi:
     
     def __init__(self) -> None:
-        self.options: tuple[callable, int] = {
+        self.options: dict[str, tuple[Callable, int]] = {
             "-c": (self.mr_clean, 0),
             "--clean": (self.mr_clean, 0),
             "-p": (self.change_path, 1),
@@ -460,6 +461,7 @@ class Kiwi:
         print("  -c, --clean\t\tRemove temporary files")
         print("  -p, --path <path>\tChange the path to the delivery directory")
         print("  -h, --help\t\tShow this help message")
+        print("  -f, --fix\t\tEnable autofix (EXPERIMENTAL)")
     
     def change_path(self, path: str) -> None:
         if not os.path.isdir(path):
@@ -468,16 +470,18 @@ class Kiwi:
         
         self.delivery_dir = os.path.abspath(path)
     
-    def run(self) -> None:
-        self.interpret_options(sys.argv)
-        self.codingStyle = CodingStyleDocker(self.reports_dir, self.delivery_dir)
-        
+    def run_coding_style(self) -> None:
         export_file: str = self.codingStyle.run()
         with open(export_file) as f:
             lines = f.readlines()
         
         self.parse_output(lines)
         os.remove(export_file)
+    
+    def run(self) -> None:
+        self.interpret_options(sys.argv)
+        self.codingStyle = CodingStyleDocker(self.reports_dir, self.delivery_dir)
+        self.run_coding_style()
         
         for error in self.errors:
             print(KiwiUtils.FORMAT.format(
