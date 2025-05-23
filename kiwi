@@ -431,7 +431,10 @@ class Kiwi:
                     '*.o',
                     '*.hi',
                     '*.a',
-                    '*.so'
+                    '*.so',
+                    '*.gcno',
+                    '*.gcda',
+                    '*.gcov'
                 ]
             ])
         )
