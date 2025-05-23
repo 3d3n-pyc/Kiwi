@@ -461,7 +461,6 @@ class Kiwi:
         print("  -c, --clean\t\tRemove temporary files")
         print("  -p, --path <path>\tChange the path to the delivery directory")
         print("  -h, --help\t\tShow this help message")
-        print("  -f, --fix\t\tEnable autofix (EXPERIMENTAL)")
     
     def change_path(self, path: str) -> None:
         if not os.path.isdir(path):
