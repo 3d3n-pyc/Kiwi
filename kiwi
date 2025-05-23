@@ -94,7 +94,7 @@ class KiwiArt:
     def print():
         for i in range(len(KiwiArt.ART)):
             for j in range(len(KiwiArt.ART[i])):
-                if KiwiArt.COLOR_CODE[i][j] == None:
+                if KiwiArt.COLOR_CODE[i][j] is None:
                     print(KiwiArt.ART[i][j], end="")
                 else:
                     string = KiwiArt.COLORS[int(KiwiArt.COLOR_CODE[i][j])] + KiwiArt.ART[i][j]
