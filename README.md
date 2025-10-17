@@ -59,7 +59,7 @@ kiwi -p /chemin/vers/repertoire
 Pour afficher l'aide :
 
 ```bash
-python3 kiwi -h
+kiwi -h
 ```
 
 
