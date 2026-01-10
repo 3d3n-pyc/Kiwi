@@ -40,6 +40,7 @@ Options
 - `-c`, `--clean` : Supprime les fichiers temporaires dans le répertoire de livraison.
 - `-p <path>`, `--path <path>` : Change le répertoire de livraison.
 - `-h`, `--help` : Affiche l'aide et les options disponibles.
+- `--pull` : Purge l'ancienne image et récupère la nouvelle image
 
 
 ## Exemples
