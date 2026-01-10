@@ -4,6 +4,9 @@ import os
 import sys
 import subprocess
 import requests
+import json
+import re
+import shutil
 
 from dataclasses import dataclass
 
@@ -122,6 +125,10 @@ class KiwiUtils:
             "Contents of the repository",
             "The repository should contain only files required for compilation and must not contain compiled (\33[3m.o, .hi, .a, .so, ...\33[0m), temporary or unnecessary files  (\33[3m*~ * #, *.d, toto, ...\33[0m)."
         ],
+        "C-O2": [
+            "File extension",
+            "Sources in a C program must only have \33[3m.c\33[0m or \33[3m.h\33[0m extensions."
+        ],
         "C-O3": [
             "File coherence",
             "A source file mustn't contain more than 10 functions (including at most 5 non-static functions)."
@@ -139,7 +146,7 @@ class KiwiUtils:
             "Inside a source file, implementations of functions must be separated by one and only one empty line."
         ],
         "C-G3": [
-            "Indentation of reprocessor directives",
+            "Indentation of preprocessor directives",
             "The preprocessor directives must be indented according to the level of indirection."
         ],
         "C-G4": [
@@ -153,9 +160,17 @@ class KiwiUtils:
             "Leading/trailing lines",
             "No leading empty lines must be present. No more than 1 trailing empty line must be present."
         ],
+        "C-G9": [
+            "Constant values",
+            "Non-trivial constant values should be defined either as a global constant or as a macro."
+        ],
         "C-G10": [
             "Inline assembly",
             "Inline assembly must never be used. Programming in C must be done... in C."
+        ],
+        "C-F1": [
+            "Coherence of functions",
+            "A function should only do one thing, not mix different levels of abstraction, and respect the single-responsibility principle."
         ],
         "C-F2": [
             "Naming functions",
@@ -202,6 +217,10 @@ class KiwiUtils:
             "Naming identifiers",
             "All identifier names must be in English, according to the \33[3msnake_case\33[0m convention. The type names defined with \33[3mtypedef\33[0m must end with \33[3m_t\33[0m. The names of macros and global constants and the content of enums must be written in \33[3mUPPER_SNAKE_CASE\33[0m."
         ],
+        "C-V2": [
+            "Structures",
+            "Variables can be grouped together into a structure if and only if they form a coherent entity. Structures must be kept as small as possible."
+        ],
         "C-V3": [
             "Pointers",
             "The pointer symbol (*) must be attached to the associated variable, with no spaces in between. It must also be preceded by a space, except when it is itself preceded by another asterisk. When used in a cast, the asterisk must have a space on its left side, but not on its right side."
@@ -221,7 +240,19 @@ class KiwiUtils:
         ],
         "C-H2": ["Include guard", "Headers must be protected from double inclusion."],
         "C-H3": ["Macros", "Macros must match only one statement, and fit on a single line."],
+        "C-A1": [
+            "Constant pointers",
+            "When creating a pointer, if the pointed data is not (or should not be) modified by the function, it should be marked as constant (const)."
+        ],
+        "C-A2": [
+            "Typing",
+            "Prefer the most accurate types possible according to the use of the data."
+        ],
         "C-A3": ["Line break at the end of file", "Files must end with a line break."],
+        "C-A4": [
+            "Static",
+            "Global variables and functions that are not used outside the compilation unit to which they belong should be marked with the static keyword."
+        ],
 
         # Haskell
         "H-P1": ["File is not parsable", None],
@@ -318,17 +349,49 @@ class KiwiUtils:
 
 class CodingStyleDocker:
     SOCKET_PATH = "/var/run/docker.sock"
+    IMAGE_NAME = "banana-coding-style-checker"
     
     def __init__(self, REPORTS_DIR: str, DELIVERY_DIR: str) -> None:
         self.HAS_SOCKET_ACCESS = os.access(self.SOCKET_PATH, os.R_OK)
-        self.GHCR_REGISTRY_TOKEN = requests.get("https://ghcr.io/token?service=ghcr.io&scope=repository:epitech/coding-style-checker:pull").json().get("token")
-        self.GHCR_REPOSITORY_STATUS = requests.head("https://ghcr.io/v2/epitech/coding-style-checker/manifests/latest", headers={"Authorization": f"Bearer {self.GHCR_REGISTRY_TOKEN}"}).status_code == 200
         
         self.DOCKER_EXEC_CMD = "docker"
         self.REPORTS_DIR = REPORTS_DIR
         self.DELIVERY_DIR = DELIVERY_DIR
         self.EXPORT_FILE = os.path.join(REPORTS_DIR, "coding-style-reports.log")
     
+    def purge_image(self) -> None:
+        if not self.HAS_SOCKET_ACCESS:
+            self.DOCKER_EXEC_CMD = f"sudo {self.DOCKER_EXEC_CMD}"
+            
+        subprocess.run(
+            [self.DOCKER_EXEC_CMD, "image", "rm", "-f", self.IMAGE_NAME],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+
+    def build_image(self) -> None:
+        print(f"{ColorsTTY.BLUE}Downloading source code...{ColorsTTY.RESET}")
+        build_dir = "/tmp/banana_build"
+        
+        if os.path.exists(build_dir):
+            subprocess.run(f"rm -rf {build_dir}", shell=True)
+            
+        subprocess.run(
+            f"git clone git@github.com:Epitech/banana-coding-style-checker.git {build_dir}", 
+            shell=True, check=True
+        )
+        
+        print(f"{ColorsTTY.BLUE}Building Docker image...{ColorsTTY.RESET}")
+        try:
+             subprocess.run(
+                [self.DOCKER_EXEC_CMD, "build", "-t", self.IMAGE_NAME, "."],
+                cwd=build_dir,
+                check=True
+            )
+        finally:
+            subprocess.run(f"rm -rf {build_dir}", shell=True)
+        
+        print(f"{ColorsTTY.GREEN}Image created successfully.{ColorsTTY.RESET}")
+
     def run(self) -> str:
         if os.path.exists(self.EXPORT_FILE):
             os.remove(self.EXPORT_FILE)
@@ -336,37 +399,67 @@ class CodingStyleDocker:
         if not self.HAS_SOCKET_ACCESS:
             self.DOCKER_EXEC_CMD = f"sudo {self.DOCKER_EXEC_CMD}"
         
-        if not self.GHCR_REPOSITORY_STATUS:
+        # Check if image exists
+        image_check = subprocess.run(
+            [self.DOCKER_EXEC_CMD, "image", "inspect", self.IMAGE_NAME],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        
+        if image_check.returncode != 0:
+            self.build_image()
+        
+        # Determine files to scan
+        git_dir = os.path.join(self.DELIVERY_DIR, ".git")
+        has_git = os.path.isdir(git_dir) and shutil.which("git") is not None
+        
+        scan_command = ""
+        
+        if has_git:
+            # Use git ls-files to respect .gitignore
+            # Generate the file list on host and pass it to docker via REPORTS_DIR (mounted at /mnt/reports)
+            file_list_path = os.path.join(self.REPORTS_DIR, "kiwi_files.txt")
+            
+            # git ls-files -c -o --exclude-standard -z '*.c' '*.h' 'Makefile'
+            # Note: We run this in DELIVERY_DIR
+            with open(file_list_path, "wb") as f:
+                subprocess.run(
+                    ["git", "ls-files", "-c", "-o", "--exclude-standard", "-z", "*.c", "*.h", "Makefile"],
+                    cwd=self.DELIVERY_DIR,
+                    stdout=f,
+                    stderr=subprocess.DEVNULL
+                )
+            
+            scan_command = (
+                'xargs -0 epiclang -fsyntax-only -fdiagnostics-format=sarif < /mnt/reports/kiwi_files.txt'
+            )
+        else:
+             # Fallback to find
+            scan_command = (
+                'find . -type f \\( -name "*.c" -o -name "*.h" -o -name "Makefile" \\) '
+                '-not -path "*/tests/*" '
+                '-not -path "*/.git/*" -print0 | '
+                'xargs -0 epiclang -fsyntax-only -fdiagnostics-format=sarif'
+            )
+
+        with open(self.EXPORT_FILE, "w") as f:
             subprocess.run([
                 self.DOCKER_EXEC_CMD,
-                "pull",
-                "ghcr.io/epitech/coding-style-checker:latest",
-                "&&",
-                self.DOCKER_EXEC_CMD,
-                "image",
-                "prune",
-                "-f"
-            ], shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                "run",
+                "--rm",
+                "--security-opt", "label:disable",
+                "-v", f"{self.DELIVERY_DIR}:/mnt/delivery:z",
+                "-v", f"{self.REPORTS_DIR}:/mnt/reports:z",
+                "-w", "/mnt/delivery",
+                self.IMAGE_NAME,
+                "bash", "-c", scan_command
+            ], stdout=f, stderr=subprocess.STDOUT)
+            
+        # Cleanup temporary file if it exists
+        if has_git and os.path.exists(os.path.join(self.REPORTS_DIR, "kiwi_files.txt")):
+             os.remove(os.path.join(self.REPORTS_DIR, "kiwi_files.txt"))
         
-        subprocess.run([
-            self.DOCKER_EXEC_CMD,
-            "run",
-            "--rm",
-            "--security-opt",
-            "label:disable",
-            "-i",
-            "-v",
-            f"{self.DELIVERY_DIR}:/mnt/delivery",
-            "-v",
-            f"{self.REPORTS_DIR}:/mnt/reports",
-            "ghcr.io/epitech/coding-style-checker:latest",
-            "/mnt/delivery",
-            "/mnt/reports"
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        if not os.path.isfile(self.EXPORT_FILE):
-            print("No reports generated", file=sys.stderr)
-            exit(1)
+        if not os.path.isfile(self.EXPORT_FILE) or os.path.getsize(self.EXPORT_FILE) == 0:
+            pass # Parser handles empty/fallback
         
         return self.EXPORT_FILE
 
@@ -377,7 +470,8 @@ class Kiwi:
             "-c": (self.mr_clean, 0),
             "--clean": (self.mr_clean, 0),
             "-p": (self.change_path, 1),
-            "--path": (self.change_path, 1)
+            "--path": (self.change_path, 1),
+            "--pull": (self.pull_image, 0)
         }
         
         self.codingStyle: CodingStyleDocker
@@ -391,6 +485,7 @@ class Kiwi:
             "MINOR": 0,
             "INFO": 0
         }
+        self.force_pull = False
     
     def interpret_options(self, options: list[str]) -> None:
         if "-h" in options or "--help" in options:
@@ -443,27 +538,68 @@ class Kiwi:
         git_exists = not os.system("command -v git > /dev/null 2>&1") and os.path.isdir(".git")
 
         for line in output:
+            line = line.strip()
             if not line:
                 continue
-            file, line, error_type, error = line.strip().split(":")
-            if self.delivery_dir != os.path.abspath("."):
-                file = self.delivery_dir + file[1:]
-
-            if git_exists and not os.system(f"git check-ignore -q '{file}' > /dev/null 2>&1"):
+            
+            # Try to parse line as valid JSON (SARIF)
+            try:
+                sarif_data = json.loads(line)
+            except json.JSONDecodeError:
                 continue
 
-            self.errors.append(CodingStyleError(
-                file=file,
-                line=int(line),
-                error_type=error_type.strip(),
-                error=error
-            ))
+            # Process SARIF data
+            for run in sarif_data.get("runs", []):
+                for result in run.get("results", []):
+                    # Parse message: [Banana] [Type] Message (Code)
+                    message = result.get("message", {}).get("text", "")
+                    match = re.search(r"\[Banana\] \[(.*?)\] (.*) \((.*)\)", message)
+                    
+                    if not match:
+                        continue
+                        
+                    error_type = match.group(1).upper()
+                    error_desc = match.group(2)
+                    error_code = match.group(3)
+                    
+                    # Locations
+                    for location in result.get("locations", []):
+                        physical_loc = location.get("physicalLocation", {})
+                        artifact_loc = physical_loc.get("artifactLocation", {})
+                        region = physical_loc.get("region", {})
+                        
+                        uri = artifact_loc.get("uri", "")
+                        if uri.startswith("file://"):
+                            uri = uri[7:]
+                        
+                        if uri.startswith("/mnt/delivery"):
+                            rel_path = os.path.relpath(uri, "/mnt/delivery")
+                            file_path = os.path.join(self.delivery_dir, rel_path)
+                        elif uri.startswith(self.delivery_dir):
+                             file_path = uri
+                        elif uri.startswith("file://" + self.delivery_dir):
+                             file_path = uri[7:]
+                        else:
+                            file_path = uri
+
+                        if git_exists and not os.system(f"git check-ignore -q '{file_path}' > /dev/null 2>&1"):
+                            continue
+                        
+                        line_no = region.get("startLine", 0)
+                        
+                        self.errors.append(CodingStyleError(
+                            file=file_path,
+                            line=line_no,
+                            error_type=error_type,
+                            error=error_code
+                        ))
 
     def show_help(self) -> None:
         print("Usage: kiwi [OPTIONS]\n")
         print("Options:")
         print("  -c, --clean\t\tRemove temporary files")
         print("  -p, --path <path>\tChange the path to the delivery directory")
+        print("  --pull\t\tForce update the docker image")
         print("  -h, --help\t\tShow this help message")
     
     def change_path(self, path: str) -> None:
@@ -472,11 +608,17 @@ class Kiwi:
             exit(1)
         
         self.delivery_dir = os.path.abspath(path)
-    
+
+    def pull_image(self) -> None:
+        self.force_pull = True
+
     def run(self) -> None:
         self.interpret_options(sys.argv)
         self.codingStyle = CodingStyleDocker(self.reports_dir, self.delivery_dir)
         
+        if self.force_pull:
+            self.codingStyle.purge_image()
+
         export_file: str = self.codingStyle.run()
         with open(export_file) as f:
             lines = f.readlines()
