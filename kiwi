@@ -371,26 +371,30 @@ class CodingStyleDocker:
     def build_image(self) -> None:
         print(f"{ColorsTTY.BLUE}Downloading source code...{ColorsTTY.RESET}")
         build_dir = "/tmp/banana_build"
-        
+
         if os.path.exists(build_dir):
             subprocess.run(f"rm -rf {build_dir}", shell=True)
-            
+
         subprocess.run(
             f"git clone git@github.com:Epitech/banana-coding-style-checker.git {build_dir}", 
             shell=True, check=True
         )
-        
+    
+        arch_map = {"x86_64": "amd64", "aarch64": "arm64", "armv7l": "arm"}
+        target_arch = arch_map.get(platform.machine(), "amd64")
+
         print(f"{ColorsTTY.BLUE}Building Docker image...{ColorsTTY.RESET}")
-        
         try:
-             subprocess.run(
-                [self.DOCKER_EXEC_CMD, "build", "-t", self.IMAGE_NAME, "."],
+            subprocess.run(
+                [self.DOCKER_EXEC_CMD, "build",
+                 "--build-arg", f"TARGETARCH={target_arch}",
+                 "-t", self.IMAGE_NAME, "."],
                 cwd=build_dir,
                 check=True
             )
         finally:
             subprocess.run(f"rm -rf {build_dir}", shell=True)
-        
+    
         print(f"{ColorsTTY.GREEN}Image created successfully.{ColorsTTY.RESET}")
 
     def run(self) -> str:
