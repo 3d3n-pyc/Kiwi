@@ -381,10 +381,15 @@ class CodingStyleDocker:
         )
         
         print(f"{ColorsTTY.BLUE}Building Docker image...{ColorsTTY.RESET}")
+
+        build_env = os.environ.copy()
+        build_env["DOCKER_BUILDKIT"] = "1"
+        
         try:
              subprocess.run(
                 [self.DOCKER_EXEC_CMD, "build", "-t", self.IMAGE_NAME, "."],
                 cwd=build_dir,
+                env=build_env,
                 check=True
             )
         finally:
