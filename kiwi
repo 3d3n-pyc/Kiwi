@@ -36,7 +36,7 @@ class ColorsTTY:
 
 class KiwiArt:
     """
-    Pretty ASCII art of a kiwi made by Etienne Pouilly.
+    Pretty ASCII art of a kiwi made by Etienne Pouille.
     Github: @EtienneP-26
     """
     
